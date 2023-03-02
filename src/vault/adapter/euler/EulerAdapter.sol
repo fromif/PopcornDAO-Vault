@@ -3,24 +3,22 @@
 
 pragma solidity ^0.8.15;
 import {AdapterBase, IERC20, IERC20Metadata, SafeERC20, ERC20, Math, IStrategy, IAdapter} from "../abstracts/AdapterBase.sol";
+import {WithRewards, IWithRewards} from "../abstracts/WithRewards.sol";
 import {IEulerEToken} from "./IEulerEToken.sol";
 import {IEulerMarkets} from "./IEulerMarkets.sol";
 import {IStakingRewards} from "./IStakingRewards.sol";
 
-contract EulerAdapter is AdapterBase {
+contract EulerAdapter is AdapterBase, WithRewards {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
     string internal _name;
     string internal _symbol;
-    uint256 private _totalHarvestedFromStakingReward;
-    mapping(address => uint256) private _rewards;
 
     address public eulerToken;
     IEulerMarkets public eulerMarket;
     IEulerEToken public eulerEToken;
     IStakingRewards public stakingReward;
-    IERC20 public rewardToken;
 
     function initialize(
         bytes memory adapterInitData,
@@ -40,7 +38,6 @@ contract EulerAdapter is AdapterBase {
 
         if (_stakingReward != address(0)) {
             stakingReward = IStakingRewards(_stakingReward);
-            rewardToken = IERC20(stakingReward.rewardsToken());
         }
 
         _name = string.concat(
@@ -98,8 +95,12 @@ contract EulerAdapter is AdapterBase {
         return _convertToAssets(shares, Math.Rounding.Down);
     }
 
-    function getRewards(address account) public view returns (uint256) {
-        return _rewards[account] + _rewardsFromStakingReward(account);
+    function rewardTokens() external view override returns (address[] memory) {
+        address[] memory _rewardTokens = new address[](1);
+        if (address(stakingReward) != address(0)) {
+            _rewardTokens[0] = stakingReward.rewardsToken();
+        }
+        return _rewardTokens;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -127,40 +128,25 @@ contract EulerAdapter is AdapterBase {
         uint256 amount = _convertToAssets(shares, Math.Rounding.Down);
         if (address(stakingReward) != address(0)) {
             stakingReward.unstake(amount);
-            _harvestFromStakingReward(msg.sender);
         }
         eulerEToken.withdraw(0, amount);
     }
 
-    function _harvestFromStakingReward(address caller) internal {
-        uint256 amount = _rewardsFromStakingReward(caller);
-        _rewards[caller] += amount;
-        _totalHarvestedFromStakingReward += amount;
-    }
+    error NoStakingReward();
 
-    function _rewardsFromStakingReward(address account)
-        internal
-        view
-        returns (uint256)
-    {
-        if (address(stakingReward) == address(0)) return 0;
-        uint256 rewardInStakingReward = stakingReward.earned(address(this));
-        uint256 harvestedReward = rewardToken.balanceOf(address(this));
-        uint256 availableReward = rewardInStakingReward +
-            harvestedReward -
-            _totalHarvestedFromStakingReward;
-
-        uint256 shares = balanceOf(account);
-        uint256 supply = totalSupply();
-        return shares.mulDiv(availableReward, supply, Math.Rounding.Down);
-    }
-
-    function claim() public {
+    function claim() public override onlyStrategy {
+        if (address(stakingReward) == address(0)) revert NoStakingReward();
         stakingReward.getReward();
-        address caller = msg.sender;
-        uint256 amount = getRewards(caller);
-        _totalHarvestedFromStakingReward -= _rewards[caller];
-        _rewards[caller] = 0;
-        rewardToken.transfer(caller, amount);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        pure
+        override(WithRewards, AdapterBase)
+        returns (bool)
+    {
+        return
+            interfaceId == type(IWithRewards).interfaceId ||
+            interfaceId == type(IAdapter).interfaceId;
     }
 }
