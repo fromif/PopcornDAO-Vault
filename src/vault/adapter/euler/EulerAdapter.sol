@@ -7,6 +7,7 @@ import {WithRewards, IWithRewards} from "../abstracts/WithRewards.sol";
 import {IEulerEToken} from "./IEulerEToken.sol";
 import {IEulerMarkets} from "./IEulerMarkets.sol";
 import {IStakingRewards} from "./IStakingRewards.sol";
+import {IPermissionRegistry} from "../../../interfaces/vault/IPermissionRegistry.sol";
 
 contract EulerAdapter is AdapterBase, WithRewards {
     using SafeERC20 for IERC20;
@@ -20,6 +21,8 @@ contract EulerAdapter is AdapterBase, WithRewards {
     IEulerEToken public eulerEToken;
     IStakingRewards public stakingReward;
 
+    error NotEndorsed(address eulerMarket);
+
     function initialize(
         bytes memory adapterInitData,
         address registry,
@@ -32,6 +35,8 @@ contract EulerAdapter is AdapterBase, WithRewards {
             address _stakingReward
         ) = abi.decode(eulerInitData, (address, address, address));
 
+        if (!IPermissionRegistry(registry).endorsed(_eulerMarket))
+            revert NotEndorsed(_eulerMarket);
         eulerToken = _eulerToken;
         eulerMarket = IEulerMarkets(_eulerMarket);
         eulerEToken = IEulerEToken(eulerMarket.underlyingToEToken(asset()));
@@ -73,26 +78,6 @@ contract EulerAdapter is AdapterBase, WithRewards {
     //////////////////////////////////////////////////////////////*/
     function _totalAssets() internal view override returns (uint256) {
         return eulerEToken.balanceOfUnderlying(address(this));
-    }
-
-    function previewWithdraw(uint256 assets)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return _convertToShares(assets, Math.Rounding.Up);
-    }
-
-    function previewRedeem(uint256 shares)
-        public
-        view
-        virtual
-        override
-        returns (uint256)
-    {
-        return _convertToAssets(shares, Math.Rounding.Down);
     }
 
     function rewardTokens() external view override returns (address[] memory) {
