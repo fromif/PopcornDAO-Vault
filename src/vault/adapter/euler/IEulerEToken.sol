@@ -12,4 +12,8 @@ interface IEulerEToken {
         returns (uint256);
 
     function balanceOf(address account) external view returns (uint256);
+
+    function underlyingAsset() external view returns (address);
+
+    function approve(address spender, uint256 amount) external returns (bool);
 }

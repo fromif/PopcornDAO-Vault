@@ -43,6 +43,7 @@ contract EulerAdapter is AdapterBase, WithRewards {
 
         if (_stakingReward != address(0)) {
             stakingReward = IStakingRewards(_stakingReward);
+            eulerEToken.approve(address(stakingReward), type(uint256).max);
         }
 
         _name = string.concat(
@@ -52,7 +53,7 @@ contract EulerAdapter is AdapterBase, WithRewards {
         );
         _symbol = string.concat("popE-", IERC20Metadata(asset()).symbol());
 
-        IERC20(asset()).approve(eulerToken, type(uint256).max);
+        IERC20(asset()).approve(address(eulerToken), type(uint256).max);
     }
 
     function name()
@@ -77,7 +78,11 @@ contract EulerAdapter is AdapterBase, WithRewards {
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
     function _totalAssets() internal view override returns (uint256) {
-        return eulerEToken.balanceOfUnderlying(address(this));
+        if (address(stakingReward) == address(0))
+            return eulerEToken.balanceOfUnderlying(address(this));
+        return
+            eulerEToken.balanceOfUnderlying(address(this)) +
+            stakingReward.balanceOf(address(this));
     }
 
     function rewardTokens() external view override returns (address[] memory) {
@@ -112,7 +117,7 @@ contract EulerAdapter is AdapterBase, WithRewards {
     {
         uint256 amount = _convertToAssets(shares, Math.Rounding.Down);
         if (address(stakingReward) != address(0)) {
-            stakingReward.unstake(amount);
+            stakingReward.withdraw(amount);
         }
         eulerEToken.withdraw(0, amount);
     }
