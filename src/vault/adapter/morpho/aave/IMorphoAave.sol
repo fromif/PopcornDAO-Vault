@@ -3,7 +3,7 @@
 
 pragma solidity ^0.8.15;
 
-interface IMorpho {
+interface IMorphoAave {
     function supply(address _poolToken, uint256 _amount) external;
 
     function withdraw(address _poolToken, uint256 _amount) external;
@@ -13,5 +13,5 @@ interface IMorpho {
         bool _tradeForMorphoToken
     ) external returns (uint256 amountOfRewards);
 
-    function positionsManager() external view returns (address);
+    function entryPositionsManager() external view returns (address);
 }
