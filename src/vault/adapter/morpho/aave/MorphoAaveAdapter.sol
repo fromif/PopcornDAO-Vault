@@ -97,10 +97,9 @@ contract MorphoAaveAdapter is AdapterBase {
     }
 
     function _protocolWithdraw(
-        uint256,
-        uint256 shares
+        uint256 amount,
+        uint256
     ) internal virtual override {
-        uint256 amount = _convertToAssets(shares, Math.Rounding.Down);
         morpho.withdraw(poolToken, amount);
     }
 }
