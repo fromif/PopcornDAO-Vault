@@ -3,9 +3,7 @@
 
 pragma solidity ^0.8.15;
 import {AdapterBase, IERC20, IERC20Metadata, SafeERC20, ERC20, Math, IStrategy, IAdapter} from "../../abstracts/AdapterBase.sol";
-import {IMorphoAave} from "./IMorphoAave.sol";
-import {IAaveLens} from "./IAaveLens.sol";
-import {Types} from "../Types.sol";
+import {IAaveSupplyVault} from "./IAaveSupplyVault.sol";
 import {IPermissionRegistry} from "../../../../interfaces/vault/IPermissionRegistry.sol";
 
 contract MorphoAaveAdapter is AdapterBase {
@@ -15,13 +13,9 @@ contract MorphoAaveAdapter is AdapterBase {
     string internal _name;
     string internal _symbol;
 
-    address public poolToken;
-    IMorphoAave public morpho;
-    IAaveLens public lens;
+    IAaveSupplyVault public supplyVault;
 
-    error NotEndorsed(address morpho);
-    error MarketNotCreated(address poolToken);
-    error SupplyIsPaused(address poolToken);
+    error NotEndorsed(address supplyVault);
 
     function initialize(
         bytes memory adapterInitData,
@@ -30,28 +24,12 @@ contract MorphoAaveAdapter is AdapterBase {
     ) external initializer {
         __AdapterBase_init(adapterInitData);
 
-        (address _poolToken, address _morpho, address _lens) = abi.decode(
-            morphoInitData,
-            (address, address, address)
-        );
+        address _supplyVault = abi.decode(morphoInitData, (address));
 
-        if (!IPermissionRegistry(registry).endorsed(_morpho))
-            revert NotEndorsed(_morpho);
+        if (!IPermissionRegistry(registry).endorsed(_supplyVault))
+            revert NotEndorsed(_supplyVault);
 
-        morpho = IMorphoAave(_morpho);
-        lens = IAaveLens(_lens);
-
-        if (!lens.isMarketCreated(_poolToken))
-            revert MarketNotCreated(_poolToken);
-
-        Types.MarketPauseStatus memory marketStatus = lens.getMarketPauseStatus(
-            _poolToken
-        );
-        if (marketStatus.isSupplyPaused) revert SupplyIsPaused(_poolToken);
-
-        poolToken = _poolToken;
-
-        address entryPositionsManager = morpho.entryPositionsManager();
+        supplyVault = IAaveSupplyVault(_supplyVault);
 
         _name = string.concat(
             "Popcorn Morpho Aave",
@@ -60,7 +38,7 @@ contract MorphoAaveAdapter is AdapterBase {
         );
         _symbol = string.concat("popMA-", IERC20Metadata(asset()).symbol());
 
-        IERC20(asset()).approve(address(morpho), type(uint256).max);
+        IERC20(asset()).approve(address(supplyVault), type(uint256).max);
     }
 
     function name()
@@ -82,18 +60,15 @@ contract MorphoAaveAdapter is AdapterBase {
     }
 
     function _totalAssets() internal view override returns (uint256) {
-        (, , uint256 totalBalance) = lens.getCurrentSupplyBalanceInOf(
-            poolToken,
-            address(this)
-        );
-        return totalBalance;
+        return
+            supplyVault.convertToAssets(supplyVault.balanceOf(address(this)));
     }
 
     function _protocolDeposit(
         uint256 amount,
         uint256
     ) internal virtual override {
-        morpho.supply(poolToken, amount);
+        supplyVault.deposit(amount, address(this));
     }
 
     function _protocolWithdraw(
@@ -101,6 +76,6 @@ contract MorphoAaveAdapter is AdapterBase {
         uint256 shares
     ) internal virtual override {
         uint256 amount = _convertToAssets(shares, Math.Rounding.Down);
-        morpho.withdraw(poolToken, amount);
+        supplyVault.withdraw(amount, address(this), address(this));
     }
 }

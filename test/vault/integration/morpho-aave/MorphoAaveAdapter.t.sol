@@ -6,19 +6,16 @@ pragma solidity ^0.8.15;
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 
-import {MorphoAaveAdapter, SafeERC20, IERC20, IERC20Metadata, IMorphoAave, IAaveLens} from "../../../../src/vault/adapter/morpho/aave/MorphoAaveAdapter.sol";
+import {MorphoAaveAdapter, SafeERC20, IERC20, IERC20Metadata, IAaveSupplyVault} from "../../../../src/vault/adapter/morpho/aave/MorphoAaveAdapter.sol";
 import {MorphoAaveTestConfigStorage, MorphoAaveTestConfig} from "./MorphoAaveTestConfigStorage.sol";
 import {AbstractAdapterTest, ITestConfigStorage, IAdapter, Math} from "../abstract/AbstractAdapterTest.sol";
 import {IPermissionRegistry, Permission} from "../../../../src/interfaces/vault/IPermissionRegistry.sol";
-import {IAToken} from "../../../../src/vault/adapter/morpho/aave/IAToken.sol";
 import {PermissionRegistry} from "../../../../src/vault/PermissionRegistry.sol";
 
 contract MorphoAaveAdapterTest is AbstractAdapterTest {
     using Math for uint256;
 
-    address public poolToken;
-    IMorphoAave public morpho;
-    IAaveLens public lens;
+    IAaveSupplyVault public supplyVault;
     IPermissionRegistry permissionRegistry;
 
     function setUp() public {
@@ -29,7 +26,7 @@ contract MorphoAaveAdapterTest is AbstractAdapterTest {
             address(new MorphoAaveTestConfigStorage())
         );
 
-         _setUpTest(testConfigStorage.getTestConfig(0));
+        _setUpTest(testConfigStorage.getTestConfig(0));
     }
 
     function overrideSetup(bytes memory testConfig) public override {
@@ -39,20 +36,15 @@ contract MorphoAaveAdapterTest is AbstractAdapterTest {
     function _setUpTest(bytes memory testConfig) internal {
         createAdapter();
 
-        (address _poolToken, address _morpho, address _lens) = abi.decode(
-            testConfig,
-            (address, address, address)
-        );
+        address _supplyVault = abi.decode(testConfig, (address));
 
-        poolToken = _poolToken;
-        morpho = IMorphoAave(_morpho);
-        lens = IAaveLens(_lens);
-        asset = IERC20(IAToken(poolToken).UNDERLYING_ASSET_ADDRESS());
+        supplyVault = IAaveSupplyVault(_supplyVault);
+        asset = IERC20(supplyVault.asset());
 
         permissionRegistry = IPermissionRegistry(
             address(new PermissionRegistry(address(this)))
         );
-        setPermission(address(morpho), true, false);
+        setPermission(address(supplyVault), true, false);
 
         setUpBaseTest(
             asset,
