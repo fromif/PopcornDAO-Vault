@@ -5,16 +5,18 @@ pragma solidity ^0.8.15;
 
 import { Test } from "forge-std/Test.sol";
 
-import { BalancerGaugeAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IGauge, IMinter } from "../../../../src/vault/adapter/balancer/BalancerGaugeAdapter.sol";
+import { BalancerGaugeAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IGauge, IMinter, IWithRewards, IStrategy } from "../../../../src/vault/adapter/balancer/BalancerGaugeAdapter.sol";
 import { BalancerGaugeTestConfigStorage, BalancerGaugeTestConfig } from "./BalancerGaugeTestConfigStorage.sol";
 import { AbstractAdapterTest, ITestConfigStorage, IAdapter } from "../abstract/AbstractAdapterTest.sol";
 import { IPermissionRegistry, Permission } from "../../../../src/interfaces/vault/IPermissionRegistry.sol";
 import { PermissionRegistry } from "../../../../src/vault/PermissionRegistry.sol";
+import { MockStrategyClaimer } from "../../../utils/mocks/MockStrategyClaimer.sol";
 
 contract BalancerGaugeAdapterTest is AbstractAdapterTest {
   using Math for uint256;
 
   address lp_token;
+  address minter;
   IGauge gague;
   uint256 compoundDefaultAmount = 1e18;
 
@@ -39,6 +41,7 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
 
     gague = IGauge(_balancerGauge);
     lp_token = gague.lp_token();
+    minter = _minter;
 
     (bool isKilled) = gague.is_killed();
     assertEq(isKilled, false, "InvalidGauge");
@@ -47,9 +50,7 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
     permissionRegistry = IPermissionRegistry(
         address(new PermissionRegistry(address(this)))
     );
-
     setPermission(_balancerGauge, true, false);
-    setPermission(_minter, true, false);
 
     setUpBaseTest(IERC20(lp_token), address(new BalancerGaugeAdapter()), address(permissionRegistry), 10, "popB-", true);
 
@@ -95,26 +96,67 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
                           INITIALIZATION
   //////////////////////////////////////////////////////////////*/
 
+function test__initialization() public override {
+
+    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+
+    createAdapter();
+    uint256 callTime = block.timestamp;
+
+    if (address(strategy) != address(0)) {
+      vm.expectEmit(false, false, false, true, address(strategy));
+      emit SelectorsVerified();
+      vm.expectEmit(false, false, false, true, address(strategy));
+      emit AdapterVerified();
+      vm.expectEmit(false, false, false, true, address(strategy));
+      emit StrategySetup();
+    }
+    vm.expectEmit(false, false, false, true, address(adapter));
+    emit Initialized(uint8(1));
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      externalRegistry,
+      abi.encode(_balancerGauge, _minter)
+    );
+
+    assertEq(adapter.owner(), address(this), "owner");
+    assertEq(adapter.strategy(), address(strategy), "strategy");
+    assertEq(adapter.harvestCooldown(), 0, "harvestCooldown");
+    assertEq(adapter.strategyConfig(), "", "strategyConfig");
+    assertEq(
+      IERC20Metadata(address(adapter)).decimals(),
+      IERC20Metadata(address(asset)).decimals() + adapter.decimalOffset(),
+      "decimals"
+    );
+
+    verify_adapterInit();
+  }
+
   function verify_adapterInit() public override {
+    assertEq(adapter.asset(), gague.lp_token(), "asset");
+    assertEq(
+      IERC20Metadata(address(adapter)).name(),
+      string.concat("Popcorn Balancer", IERC20Metadata(address(asset)).name(), " Adapter"),
+      "name"
+    );
     assertEq(
       IERC20Metadata(address(adapter)).symbol(),
       string.concat("popB-", IERC20Metadata(address(asset)).symbol()),
       "symbol"
     );
+
+    assertEq(asset.allowance(address(adapter), address(gague)), type(uint256).max, "allowance");
+
+    // Test Beefy Config Boundaries
+    createAdapter();
+    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      address(permissionRegistry),
+      abi.encode(_balancerGauge, _minter)
+    );
   }
-
-  /*//////////////////////////////////////////////////////////////
-                            ROUNDTRIP TESTS
-  //////////////////////////////////////////////////////////////*/
-
-  function test__RT_deposit_withdraw() public override {
-  }
-
-  // NOTE - The across adapter suffers often from an off-by-one error which "steals" 1 wei from the user
-  function test__RT_mint_withdraw() public override {
-
-  }
-
   /*//////////////////////////////////////////////////////////////
                               PAUSE
     //////////////////////////////////////////////////////////////*/
@@ -145,5 +187,36 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
     adapter.deposit(1e18, bob);
     adapter.mint(1e18, bob);
   }
-  function test__harvest() public override {}
+
+  /*//////////////////////////////////////////////////////////////
+                              CLAIM
+    //////////////////////////////////////////////////////////////*/
+
+  function test__claim() public override {
+
+    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+
+    strategy = IStrategy(address(new MockStrategyClaimer()));
+    createAdapter();
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      externalRegistry,
+      testConfigStorage.getTestConfig(0)
+    );
+
+    _mintFor(1000e18, bob);
+
+    vm.prank(bob);
+    adapter.deposit(1000e18, bob);
+
+    vm.warp(block.timestamp + 10 days);
+
+    vm.prank(bob);
+    adapter.withdraw(1, bob, bob);
+
+    address[] memory rewardTokens = IWithRewards(address(adapter)).rewardTokens();
+    assertEq(rewardTokens[0], IMinter(minter).getBalancerToken());
+
+    assertGt(IERC20(rewardTokens[0]).balanceOf(address(adapter)), 0);
+  }
 }

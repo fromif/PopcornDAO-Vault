@@ -38,7 +38,7 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
         (address _balancerGauge, address _balancerMinter) = abi.decode(balancerInitData, (address,address));
         __AdapterBase_init(adapterInitData);
 
-        if (!IPermissionRegistry(registry).endorsed(_balancerGauge)) revert NotEndorsed(_balancerGauge);
+        if (!IPermissionRegistry(registry).endorsed(_balancerGauge)){ revert NotEndorsed(_balancerGauge);}
 
         _name = string.concat("Popcorn Balancer", IERC20Metadata(asset()).name(), " Adapter");
         _symbol = string.concat("popB-", IERC20Metadata(asset()).symbol());
@@ -70,14 +70,6 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
                           INTERNAL HOOKS LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The amount of beefy shares to withdraw given an amount of adapter shares
-    function convertToUnderlyingShares(uint256, uint256 shares) public view override returns (uint256) {
-
-        uint256 supply = totalSupply();
-        return supply == 0 ? shares : shares.mulDiv(_totalAssets(), supply, Math.Rounding.Up);
-        
-    }
-
     function _protocolDeposit(uint256 amount, uint256)
         internal
         virtual
@@ -86,13 +78,12 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
         IGauge(balancerGauge).deposit(amount, address(this), false);
     }
 
-    function _protocolWithdraw(uint256, uint256 share)
+    function _protocolWithdraw(uint256 amount, uint256)
         internal
         virtual
         override
     {
-        uint256 _lpShare = convertToUnderlyingShares(0, share);
-        IGauge(balancerGauge).withdraw(_lpShare, false);
+        IGauge(balancerGauge).withdraw(amount, false);
     }
 
     function claim() public override onlyStrategy {
