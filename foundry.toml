@@ -20,3 +20,4 @@ remappings = [
 mainnet = "${ETH_RPC_URL}" 
 polygon = "${POLYGON_RPC_URL}" 
 binance = "${BSC_RPC_URL}"
+optimism = "${OPTIMISM_RPC_URL}"
