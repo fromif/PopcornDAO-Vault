@@ -6,7 +6,7 @@ pragma solidity ^0.8.15;
 import { AdapterBase, IERC20, IERC20Metadata, SafeERC20, ERC20, Math, IStrategy, IAdapter } from "../abstracts/AdapterBase.sol";
 import { WithRewards, IWithRewards } from "../abstracts/WithRewards.sol";
 import { IPermissionRegistry } from "../../../interfaces/vault/IPermissionRegistry.sol";
-import { IGauge, IMinter } from "./IBalancer.sol";
+import { IGauge, IMinter, IController } from "./IBalancer.sol";
 
 contract BalancerGaugeAdapter is AdapterBase, WithRewards {
     using SafeERC20 for IERC20;
@@ -26,8 +26,6 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
     * @param adapterInitData Encoded data for the base adapter initialization.
     * @param registry Endorsement Registry to check if the balancer adapter is endorsed.
     * @param balancerInitData Encoded data for the balancer adapter initialization.
-    * @dev `_balancerMinter` - the address of Balancer Minter.
-    * @dev `_balancerGauge` - the address of Balancer Gauge.
     * @dev This function is called by the factory contract when deploying a new vault.
     */
     function initialize(
@@ -35,17 +33,19 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
         address registry,
         bytes memory balancerInitData
     ) external initializer {
-        (address _balancerGauge, address _balancerMinter) = abi.decode(balancerInitData, (address,address));
+        (address _balancerGauge) = abi.decode(balancerInitData, (address));
         __AdapterBase_init(adapterInitData);
-
-        if (!IPermissionRegistry(registry).endorsed(_balancerGauge)){ revert NotEndorsed(_balancerGauge);}
 
         _name = string.concat("Popcorn Balancer", IERC20Metadata(asset()).name(), " Adapter");
         _symbol = string.concat("popB-", IERC20Metadata(asset()).symbol());
 
-        if(IGauge(_balancerGauge).is_killed()) revert Disabled();
+        address controller = IMinter(registry).getGaugeController();
+        if (!IController(controller).gauge_exists(_balancerGauge)) revert Disabled();
+
+        if (IGauge(_balancerGauge).is_killed()) revert Disabled();
+
         balancerGauge = _balancerGauge;
-        balancerMinter = _balancerMinter;
+        balancerMinter = registry;
 
         IERC20(asset()).approve(_balancerGauge, type(uint256).max);
     }

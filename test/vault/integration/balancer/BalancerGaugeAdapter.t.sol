@@ -8,20 +8,15 @@ import { Test } from "forge-std/Test.sol";
 import { BalancerGaugeAdapter, SafeERC20, IERC20, IERC20Metadata, Math, IGauge, IMinter, IWithRewards, IStrategy } from "../../../../src/vault/adapter/balancer/BalancerGaugeAdapter.sol";
 import { BalancerGaugeTestConfigStorage, BalancerGaugeTestConfig } from "./BalancerGaugeTestConfigStorage.sol";
 import { AbstractAdapterTest, ITestConfigStorage, IAdapter } from "../abstract/AbstractAdapterTest.sol";
-import { IPermissionRegistry, Permission } from "../../../../src/interfaces/vault/IPermissionRegistry.sol";
-import { PermissionRegistry } from "../../../../src/vault/PermissionRegistry.sol";
 import { MockStrategyClaimer } from "../../../utils/mocks/MockStrategyClaimer.sol";
 
 contract BalancerGaugeAdapterTest is AbstractAdapterTest {
   using Math for uint256;
 
   address lp_token;
-  address minter;
+  address registry = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b; // Minter
   IGauge gague;
   uint256 compoundDefaultAmount = 1e18;
-
-  IPermissionRegistry permissionRegistry;
-
 
   function setUp() public {
     uint256 forkId = vm.createSelectFork(vm.rpcUrl("mainnet"));
@@ -37,23 +32,15 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
   }
 
   function _setUpTest(bytes memory testConfig) internal {
-    (address _balancerGauge, address _minter) = abi.decode(testConfig, (address,address));
+    (address _balancerGauge) = abi.decode(testConfig, (address));
 
     gague = IGauge(_balancerGauge);
     lp_token = gague.lp_token();
-    minter = _minter;
 
     (bool isKilled) = gague.is_killed();
     assertEq(isKilled, false, "InvalidGauge");
 
-    // Endorse Balancer Market
-    permissionRegistry = IPermissionRegistry(
-        address(new PermissionRegistry(address(this)))
-    );
-    setPermission(_balancerGauge, true, false);
-
-    setUpBaseTest(IERC20(lp_token), address(new BalancerGaugeAdapter()), address(permissionRegistry), 10, "popB-", true);
-
+    setUpBaseTest(IERC20(lp_token), address(new BalancerGaugeAdapter()), registry, 10, "popB-", true);
     vm.label(address(asset), "USDC-DAI-USDT");
     vm.label(address(_balancerGauge), "_balancerGauge");
     vm.label(address(this), "test");
@@ -61,17 +48,6 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
     adapter.initialize(abi.encode(asset, address(this), strategy, 0, sigs, ""), externalRegistry, testConfig);
   }
 
-  function setPermission(
-      address target,
-      bool endorsed,
-      bool rejected
-  ) public {
-      address[] memory targets = new address[](1);
-      Permission[] memory permissions = new Permission[](1);
-      targets[0] = target;
-      permissions[0] = Permission(endorsed, rejected);
-      permissionRegistry.setPermissions(targets, permissions);
-  }
   /*//////////////////////////////////////////////////////////////
                           HELPER
   //////////////////////////////////////////////////////////////*/
@@ -98,7 +74,7 @@ contract BalancerGaugeAdapterTest is AbstractAdapterTest {
 
 function test__initialization() public override {
 
-    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+    (address _balancerGauge) = abi.decode(testConfigStorage.getTestConfig(0), (address));
 
     createAdapter();
     uint256 callTime = block.timestamp;
@@ -116,7 +92,7 @@ function test__initialization() public override {
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
       externalRegistry,
-      abi.encode(_balancerGauge, _minter)
+      abi.encode(_balancerGauge)
     );
 
     assertEq(adapter.owner(), address(this), "owner");
@@ -149,12 +125,12 @@ function test__initialization() public override {
 
     // Test Beefy Config Boundaries
     createAdapter();
-    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+    (address _balancerGauge) = abi.decode(testConfigStorage.getTestConfig(0), (address));
 
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
-      address(permissionRegistry),
-      abi.encode(_balancerGauge, _minter)
+      externalRegistry,
+      abi.encode(_balancerGauge)
     );
   }
   /*//////////////////////////////////////////////////////////////
@@ -194,7 +170,7 @@ function test__initialization() public override {
 
   function test__claim() public override {
 
-    (address _balancerGauge, address _minter) = abi.decode(testConfigStorage.getTestConfig(0), (address,address));
+    (address _balancerGauge) = abi.decode(testConfigStorage.getTestConfig(0), (address));
 
     strategy = IStrategy(address(new MockStrategyClaimer()));
     createAdapter();
@@ -215,7 +191,7 @@ function test__initialization() public override {
     adapter.withdraw(1, bob, bob);
 
     address[] memory rewardTokens = IWithRewards(address(adapter)).rewardTokens();
-    assertEq(rewardTokens[0], IMinter(minter).getBalancerToken());
+    assertEq(rewardTokens[0], IMinter(registry).getBalancerToken());
 
     assertGt(IERC20(rewardTokens[0]).balanceOf(address(adapter)), 0);
   }

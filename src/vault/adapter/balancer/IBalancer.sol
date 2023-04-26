@@ -15,4 +15,9 @@ interface IGauge {
 interface IMinter {
     function mint(address gauge) external;
     function getBalancerToken() external view returns(address);
+    function getGaugeController() external view returns(address);
+}
+
+interface IController {
+    function gauge_exists(address _gauge) external view returns(bool);
 }
