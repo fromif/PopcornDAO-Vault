@@ -113,7 +113,7 @@ contract CompoundV2Adapter is AdapterBase, WithRewards {
     function _viewUnderlyingBalanceOf(
         address token,
         address user
-    ) internal view returns (uint256) {
+    ) internal virtual view returns (uint256) {
         ICToken token = ICToken(token);
         return LibCompound.viewUnderlyingBalanceOf(token, user);
     }
