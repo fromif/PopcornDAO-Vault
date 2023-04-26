@@ -4,6 +4,7 @@
 pragma solidity ^0.8.15;
 
 import { Test } from "forge-std/Test.sol";
+import "forge-std/console.sol";
 
 import { DotDotAdapter, SafeERC20, IERC20, IERC20Metadata, IEllipsisLpStaking, IWithRewards, IStrategy } from "../../../../src/vault/adapter/dotdot/DotDotAdapter.sol";
 import { DotDotTestConfigStorage, DotDotTestConfig } from "./DotDotTestConfigStorage.sol";
@@ -17,6 +18,7 @@ contract DotDotAdapterTest is AbstractAdapterTest {
 
   IEllipsisLpStaking public lpStaking;
   IPermissionRegistry permissionRegistry;
+  address _lpToken = 0x5b5bD8913D766D005859CE002533D4838B0Ebbb5;
 
   function setUp() public {
     testConfigStorage = ITestConfigStorage(address(new DotDotTestConfigStorage()));
@@ -29,10 +31,7 @@ contract DotDotAdapterTest is AbstractAdapterTest {
   }
 
   function _setUpTest(bytes memory testConfig) internal {
-    (address _lpToken, address _lpStaking) = abi.decode(
-      testConfig,
-      (address, address)
-    );
+    (address _lpStaking) = abi.decode(testConfig,(address));
 
     uint256 forkId = vm.createSelectFork(vm.rpcUrl("binance"));
     vm.selectFork(forkId);
@@ -98,10 +97,7 @@ contract DotDotAdapterTest is AbstractAdapterTest {
   function test__initialization() public override {
     testConfigStorage = ITestConfigStorage(address(new DotDotTestConfigStorage()));
 
-    (address _lpToken, address _lpStaking) = abi.decode(
-      testConfigStorage.getTestConfig(0),
-      (address, address)
-    );
+    (address _lpStaking) = abi.decode(testConfigStorage.getTestConfig(0),(address));
     createAdapter();
     uint256 callTime = block.timestamp;
     if (address(strategy) != address(0)) {
@@ -118,7 +114,7 @@ contract DotDotAdapterTest is AbstractAdapterTest {
     adapter.initialize(
       abi.encode(asset, address(this), strategy, 0, sigs, ""),
       externalRegistry,
-      abi.encode(_lpToken, _lpStaking)
+      abi.encode(_lpStaking)
     );
 
     assertEq(adapter.owner(), address(this), "owner");
@@ -135,6 +131,7 @@ contract DotDotAdapterTest is AbstractAdapterTest {
   }
 
   function verify_adapterInit() public override {
+    assertNotEq(IEllipsisLpStaking(lpStaking).depositTokens(adapter.asset()), address(0), "asset");
     assertEq(
       IERC20Metadata(address(adapter)).name(),
       string.concat("Popcorn DotDot", IERC20Metadata(address(asset)).name(), " Adapter"),
@@ -268,13 +265,5 @@ contract DotDotAdapterTest is AbstractAdapterTest {
     vm.startPrank(bob);
     adapter.deposit(defaultAmount, bob);
     adapter.mint(defaultAmount, bob);
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                              CLAIM
-    //////////////////////////////////////////////////////////////*/
-
-  function test__claim() public override {
-    
   }
 }

@@ -19,4 +19,6 @@ interface IEllipsisLpStaking {
     function DDD() external view returns (address);
     function EPX() external view returns (address);
 
+    function depositTokens(address _token) external view returns (address);
+
 }

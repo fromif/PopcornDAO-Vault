@@ -45,8 +45,7 @@ contract DotDotAdapter is AdapterBase, WithRewards {
         address registry,
         bytes memory dotdotInitData
     ) external initializer {
-        ( , address _lpStaking) = abi.decode(
-            dotdotInitData, (address, address));
+        (address _lpStaking) = abi.decode(dotdotInitData, (address));
         __AdapterBase_init(adapterInitData);
 
         if (!IPermissionRegistry(registry).endorsed(_lpStaking))
