@@ -28,7 +28,7 @@ contract DotDotAdapter is AdapterBase, WithRewards {
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
-    error NotEndorsed(address dotdotStaking);
+    error NotEndorsed(address lpToken);
     error InvalidBeefyVault(address beefyVault);
     error InvalidBeefyBooster(address beefyBooster);
 
@@ -45,11 +45,10 @@ contract DotDotAdapter is AdapterBase, WithRewards {
         address registry,
         bytes memory dotdotInitData
     ) external initializer {
-        (address _lpStaking) = abi.decode(dotdotInitData, (address));
         __AdapterBase_init(adapterInitData);
 
-        if (!IPermissionRegistry(registry).endorsed(_lpStaking))
-            revert NotEndorsed(_lpStaking);
+        lpStaking = IEllipsisLpStaking(registry);
+        if (lpStaking.depositTokens(asset()) == address(0)) revert NotEndorsed(asset());
 
         _name = string.concat(
             "Popcorn DotDot",
@@ -58,9 +57,7 @@ contract DotDotAdapter is AdapterBase, WithRewards {
         );
         _symbol = string.concat("popD-", IERC20Metadata(asset()).symbol());
 
-        lpStaking = IEllipsisLpStaking(_lpStaking);
-
-        IERC20(asset()).approve(_lpStaking, type(uint256).max);
+        IERC20(asset()).approve(registry, type(uint256).max);
 
     }
 
@@ -92,19 +89,23 @@ contract DotDotAdapter is AdapterBase, WithRewards {
 
     /// @notice The token rewarded if a beefy booster is configured
     function rewardTokens()
-        external
+        public
         view
         override
-        returns (address[] memory _rewardTokens)
+        returns (address[] memory)
     {
-        address[] memory extraTokens = lpStaking.extraRewards(asset());
-        uint256 nRewardTokens = extraTokens.length + 2;
-        _rewardTokens = new address[](nRewardTokens);
-        for (uint256 i = 0; i < extraTokens.length; i++) {
-            _rewardTokens[0] = extraTokens[i];
+        uint256 extraRewardsLength = lpStaking.extraRewardsLength(asset());
+
+        uint256 nRewardTokens = extraRewardsLength + 2;
+        address[] memory _rewardTokens = new address[](nRewardTokens);
+      
+        _rewardTokens[0] = lpStaking.EPX();
+        _rewardTokens[1] = lpStaking.DDD();
+        for (uint256 i = 0; i < extraRewardsLength; i++) {
+            _rewardTokens[i + 2] = lpStaking.extraRewards(asset(), i);
         }
-        _rewardTokens[nRewardTokens] = lpStaking.EPX();
-        _rewardTokens[nRewardTokens + 1] = lpStaking.DDD();
+        return _rewardTokens;
+
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -121,10 +122,9 @@ contract DotDotAdapter is AdapterBase, WithRewards {
 
     /// @notice Withdraw from the dotdot vault and optionally from the booster given its configured
     function _protocolWithdraw(
-        uint256,
-        uint256 shares
+        uint256 amount,
+        uint256
     ) internal virtual override {
-        uint256 amount = convertToAssets(shares);
         lpStaking.withdraw(address(this), asset(), amount);
     }
 
@@ -134,9 +134,12 @@ contract DotDotAdapter is AdapterBase, WithRewards {
 
     /// @notice Claim rewards from the lpStaking given its configured
     function claim() public override onlyStrategy returns (bool success) {
+        address[] memory rewardTokens = rewardTokens();
         address[] memory tokens = new address[](1);
         tokens[0] = asset();
+
         try lpStaking.claim(address(this), tokens, 0) {
+            lpStaking.claimExtraRewards(address(this), asset());
             success = true;
         } catch {}
     }
