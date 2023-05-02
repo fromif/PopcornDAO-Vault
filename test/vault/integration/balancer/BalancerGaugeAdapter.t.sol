@@ -138,7 +138,7 @@ function test__initialization() public override {
     //////////////////////////////////////////////////////////////*/
 
   function test__unpause() public override {
-    _mintFor(3e18, bob);
+    _mintAssetAndApproveForAdapter(3e18, bob);
 
     vm.prank(bob);
     adapter.deposit(1e18, bob);
@@ -180,7 +180,7 @@ function test__initialization() public override {
       testConfigStorage.getTestConfig(0)
     );
 
-    _mintFor(1000e18, bob);
+    _mintAssetAndApproveForAdapter(1000e18, bob);
 
     vm.prank(bob);
     adapter.deposit(1000e18, bob);
