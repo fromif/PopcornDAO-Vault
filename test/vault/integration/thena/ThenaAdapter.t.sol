@@ -8,13 +8,13 @@ import { Test } from "forge-std/Test.sol";
 
 import { ThenaAdapter, SafeERC20, IERC20, IERC20Metadata, GaugeV2, VoterV3, IWithRewards, IStrategy, ERC20 } from "../../../../src/vault/adapter/thena/ThenaAdapter.sol";
 import { AbstractAdapterTest, ITestConfigStorage, IAdapter, Math } from "../abstract/AbstractAdapterTest.sol";
-import { ThenaTestConfigStorage } from "./ThenaTestConfigStorage.sol";
+import { ThenaTestConfigStorage, ThenaTestConfig } from "./ThenaTestConfigStorage.sol";
 import { MockStrategyClaimer } from "../../../utils/mocks/MockStrategyClaimer.sol";
+
 
 contract ThenaAdapterTest is AbstractAdapterTest {
   using Math for uint256;
 
-  address token = 0x483653bcF3a10d9a1c334CE16a19471a614F4385; // VolatileV1 AMM - WBNB/BUSD
   address _factory = 0x3A1D0952809F4948d15EBCe8d345962A282C4fCb;
 
   VoterV3 public GAUGES_FACTORY_VOTER;
@@ -27,10 +27,16 @@ contract ThenaAdapterTest is AbstractAdapterTest {
 
     testConfigStorage = ITestConfigStorage(address(new ThenaTestConfigStorage()));
 
-    _setUpTest();
+    _setUpTest(testConfigStorage.getTestConfig(0));
   }
 
-  function _setUpTest() internal {
+  function overrideSetup(bytes memory testConfig) public override {
+    _setUpTest(testConfig);
+  }
+
+  function _setUpTest(bytes memory testConfig) internal {
+
+    address token = abi.decode(testConfig, (address));
 
     setUpBaseTest(
       IERC20(token),
@@ -49,7 +55,7 @@ contract ThenaAdapterTest is AbstractAdapterTest {
     vm.label(address(asset), "asset");
     vm.label(address(this), "test");
 
-    adapter.initialize(abi.encode(asset, address(this), strategy, 0, sigs, ""), externalRegistry, "");
+    adapter.initialize(abi.encode(asset, address(this), strategy, 0, sigs, ""), externalRegistry, testConfig);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -128,4 +134,27 @@ contract ThenaAdapterTest is AbstractAdapterTest {
     );
   }
 
+  /*//////////////////////////////////////////////////////////////
+                              CLAIM
+    //////////////////////////////////////////////////////////////*/
+
+  function test__claim() public override {
+    strategy = IStrategy(address(new MockStrategyClaimer()));
+    createAdapter();
+    adapter.initialize(
+      abi.encode(asset, address(this), strategy, 0, sigs, ""),
+      externalRegistry,
+      ""
+    );
+
+    _mintAssetAndApproveForAdapter(1000e18, bob);
+
+    vm.prank(bob);
+    adapter.deposit(1000e18, bob);
+    vm.warp(block.timestamp + 10 days);
+    vm.prank(bob);
+    adapter.withdraw(1, bob, bob);
+    address[] memory rewardTokens = IWithRewards(address(adapter)).rewardTokens();
+    assertGt(IERC20(rewardTokens[0]).balanceOf(address(adapter)), 0);
+  }
 }

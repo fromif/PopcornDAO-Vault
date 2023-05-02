@@ -86,9 +86,9 @@ contract BalancerGaugeAdapter is AdapterBase, WithRewards {
         IGauge(balancerGauge).withdraw(amount, false);
     }
 
-    /// @notice Claim rewards from the beefy booster given its configured
     function claim() public override onlyStrategy returns (bool success) {
-        try IMinter(balancerMinter).mint(balancerGauge) {
+        
+        try IMinter(balancerMinter).mint(balancerGauge){
             success = true;
         } catch {}
     }
