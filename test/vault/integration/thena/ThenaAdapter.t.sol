@@ -6,8 +6,9 @@ import "forge-std/console.sol";
 
 import { Test } from "forge-std/Test.sol";
 
-import { ThenaAdapter, SafeERC20, IERC20, IERC20Metadata, GaugeV2, VoterV3, IWithRewards, IStrategy } from "../../../../src/vault/adapter/thena/ThenaAdapter.sol";
+import { ThenaAdapter, SafeERC20, IERC20, IERC20Metadata, GaugeV2, VoterV3, IWithRewards, IStrategy, ERC20 } from "../../../../src/vault/adapter/thena/ThenaAdapter.sol";
 import { AbstractAdapterTest, ITestConfigStorage, IAdapter, Math } from "../abstract/AbstractAdapterTest.sol";
+import { ThenaTestConfigStorage } from "./ThenaTestConfigStorage.sol";
 import { MockStrategyClaimer } from "../../../utils/mocks/MockStrategyClaimer.sol";
 
 contract ThenaAdapterTest is AbstractAdapterTest {
@@ -17,15 +18,19 @@ contract ThenaAdapterTest is AbstractAdapterTest {
   address _factory = 0x3A1D0952809F4948d15EBCe8d345962A282C4fCb;
 
   VoterV3 public GAUGES_FACTORY_VOTER;
+  GaugeV2 public gauge;
 
   function setUp() public {
+    
+    uint256 forkId = vm.createSelectFork(vm.rpcUrl("binance"));
+    vm.selectFork(forkId);
+
+    testConfigStorage = ITestConfigStorage(address(new ThenaTestConfigStorage()));
+
     _setUpTest();
   }
 
   function _setUpTest() internal {
-
-    uint256 forkId = vm.createSelectFork(vm.rpcUrl("binance"));
-    vm.selectFork(forkId);
 
     setUpBaseTest(
       IERC20(token),
@@ -35,6 +40,10 @@ contract ThenaAdapterTest is AbstractAdapterTest {
       "Thena ",
       true
     );
+
+    GAUGES_FACTORY_VOTER = VoterV3(externalRegistry);
+
+    gauge = GAUGES_FACTORY_VOTER.gauges(ERC20(token));
 
     vm.label(_factory, "_factory");
     vm.label(address(asset), "asset");
@@ -48,7 +57,7 @@ contract ThenaAdapterTest is AbstractAdapterTest {
     //////////////////////////////////////////////////////////////*/
 
   function iouBalance() public view override returns (uint256) {
-
+    return gauge.balanceOf(address(adapter));
   }
 
   // Verify that totalAssets returns the expected amount
@@ -119,134 +128,4 @@ contract ThenaAdapterTest is AbstractAdapterTest {
     );
   }
 
-  /*//////////////////////////////////////////////////////////////
-                    DEPOSIT/MINT/WITHDRAW/REDEEM
-    //////////////////////////////////////////////////////////////*/
-
-  function test__deposit(uint8 fuzzAmount) public override {
-
-    uint256 amount = bound(uint256(fuzzAmount), minFuzz, maxAssets);
-
-    _mintAssetAndApproveForAdapter(amount, bob);
-    prop_deposit(bob, bob, amount, testId);
-
-    increasePricePerShare(raise);
-
-    _mintAssetAndApproveForAdapter(amount, bob);
-    prop_deposit(bob, alice, amount, testId);
-
-  }
-
-  function test__mint(uint8 fuzzAmount) public override {
-
-    uint256 amount = bound(uint256(fuzzAmount), minFuzz, maxShares);
-
-    _mintAssetAndApproveForAdapter(adapter.previewMint(amount), bob);
-    prop_mint(bob, bob, amount, testId);
-
-    increasePricePerShare(raise);
-
-    _mintAssetAndApproveForAdapter(adapter.previewMint(amount), bob);
-    prop_mint(bob, alice, amount, testId);
-    
-  }
-
-  function test__withdraw(uint8 fuzzAmount) public override {
-
-    uint256 amount = bound(uint256(fuzzAmount), minFuzz, maxAssets);
-
-    uint256 reqAssets = (adapter.previewMint(adapter.previewWithdraw(amount)) * 10) / 8;
-    _mintAssetAndApproveForAdapter(reqAssets, bob);
-    vm.prank(bob);
-    adapter.deposit(reqAssets, bob);
-    prop_withdraw(bob, bob, amount, testId);
-
-    _mintAssetAndApproveForAdapter(reqAssets, bob);
-    vm.prank(bob);
-    adapter.deposit(reqAssets, bob);
-
-    increasePricePerShare(raise);
-
-    vm.prank(bob);
-    adapter.approve(alice, type(uint256).max);
-    prop_withdraw(alice, bob, amount, testId);
-    
-  }
-
-  function test__redeem(uint8 fuzzAmount) public override {
-
-    uint256 amount = bound(uint256(fuzzAmount), minFuzz, maxShares);
-
-    uint256 reqAssets = (adapter.previewMint(amount) * 10) / 9;
-    _mintAssetAndApproveForAdapter(reqAssets, bob);
-    vm.prank(bob);
-    adapter.deposit(reqAssets, bob);
-    prop_redeem(bob, bob, amount, testId);
-
-    _mintAssetAndApproveForAdapter(reqAssets, bob);
-    vm.prank(bob);
-    adapter.deposit(reqAssets, bob);
-
-    increasePricePerShare(raise);
-
-    vm.prank(bob);
-    adapter.approve(alice, type(uint256).max);
-    prop_redeem(alice, bob, amount, testId);
-    
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                              PAUSE
-    //////////////////////////////////////////////////////////////*/
-
-  function test__unpause() public override {
-    _mintAssetAndApproveForAdapter(defaultAmount * 3, bob);
-
-    vm.prank(bob);
-    adapter.deposit(defaultAmount, bob);
-
-    uint256 oldTotalAssets = adapter.totalAssets();
-    uint256 oldTotalSupply = adapter.totalSupply();
-    uint256 oldIouBalance = iouBalance();
-
-    adapter.pause();
-    adapter.unpause();
-
-    // We simply deposit back into the external protocol
-    // TotalSupply and Assets dont change
-    // @dev overriden _delta_
-    assertApproxEqAbs(oldTotalAssets, adapter.totalAssets(), 50, "totalAssets");
-    assertApproxEqAbs(oldTotalSupply, adapter.totalSupply(), 50, "totalSupply");
-    assertApproxEqAbs(asset.balanceOf(address(adapter)), 0, 50, "asset balance");
-    assertApproxEqRel(iouBalance(), oldIouBalance, 1, "iou balance");
-
-    // Deposit and mint dont revert
-    vm.startPrank(bob);
-    adapter.deposit(defaultAmount, bob);
-    adapter.mint(defaultAmount, bob);
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                              CLAIM
-    //////////////////////////////////////////////////////////////*/
-
-  function test__claim() public override {
-    strategy = IStrategy(address(new MockStrategyClaimer()));
-    createAdapter();
-    adapter.initialize(
-      abi.encode(asset, address(this), strategy, 0, sigs, ""),
-      externalRegistry,
-      ""
-    );
-
-    _mintAssetAndApproveForAdapter(1000e18, bob);
-
-    vm.prank(bob);
-    adapter.deposit(1000e18, bob);
-    vm.warp(block.timestamp + 10 days);
-    vm.prank(bob);
-    adapter.withdraw(1, bob, bob);
-    address[] memory rewardTokens = IWithRewards(address(adapter)).rewardTokens();
-    assertGt(IERC20(rewardTokens[0]).balanceOf(address(adapter)), 0);
-  }
 }
